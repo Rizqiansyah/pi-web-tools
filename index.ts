@@ -1,14 +1,15 @@
 /**
  * pi-web-tools — Pi web tools under familiar names, one provider each.
  *
- *   web_fetch  -> local Firecrawl scrape (Camofox render path)
  *   web_search -> Parallel Search API  (official parallel-web SDK)
+ *   web_fetch  -> local Firecrawl scrape (Camofox render path)
  *
- * Replaces @narumitw/pi-firecrawl (fetch) and @parallel-web/pi-extension
- * (search) with a single extension that owns both tool names, so the
+ * Replaces @parallel-web/pi-extension (search) and @narumitw/pi-firecrawl
+ * (fetch) with a single extension that owns both tool names, so the
  * vocabulary and descriptions are controlled here.
  *
  * Env (read at tool execution time, never in this file):
+ *   PARALLEL_API_KEY       required for web_search
  *   FIRECRAWL_API_URL      optional, default http://127.0.0.1:3002/v1
  *   FIRECRAWL_API_KEY      required for web_fetch (always sent as Bearer)
  *
@@ -24,6 +25,7 @@ import {
   type ExtensionAPI,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import Parallel from "parallel-web";
 import { randomUUID } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -32,6 +34,10 @@ import { join } from "node:path";
 const FIRECRAWL_DEFAULT_URL = "http://127.0.0.1:3002/v1";
 const MAX_URLS = 20;
 const FETCH_CONCURRENCY = 3;
+
+// One session id per extension load; Parallel uses it to correlate related
+// search calls within the task (mirrors @parallel-web/pi-extension).
+const parallelSessionId = randomUUID();
 
 function apiUrl(): string {
   return (
@@ -51,7 +57,110 @@ function persistFullOutput(text: string): string | undefined {
   }
 }
 
+/**
+ * Shape an arbitrary JSON payload into a bounded text tool result.
+ * Truncates with pi's standard head-truncation; when truncated, persists the
+ * full text to a temp file and includes its path so nothing is lost.
+ */
+function boundedJsonText(payload: unknown): string {
+  const pretty = JSON.stringify(payload, null, 2) ?? String(payload);
+  const truncated = truncateHead(pretty, {
+    maxLines: DEFAULT_MAX_LINES,
+    maxBytes: DEFAULT_MAX_BYTES,
+  });
+  if (!truncated.truncated) return truncated.content;
+  const full = persistFullOutput(pretty);
+  return (
+    truncated.content +
+    `\n\n[Output truncated: showing ${truncated.outputLines} of ${truncated.totalLines} lines, ${formatSize(truncated.outputBytes)} of ${formatSize(truncated.totalBytes)}.${
+      full ? ` Full output saved to ${full}.` : ""
+    }]`
+  );
+}
+
+function cleanObject(value: any): any {
+  if (Array.isArray(value)) return value.map(cleanObject);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value).filter(([, v]) => v !== undefined).map(([k, v]) => [k, cleanObject(v)]),
+  );
+}
+
 export default function piWebTools(pi: ExtensionAPI) {
+  // ---------------------------------------------------------------------
+  // web_search — Parallel Search API
+  // ---------------------------------------------------------------------
+  pi.registerTool({
+    name: "web_search",
+    label: "Web Search",
+    description:
+      "Search the web using Parallel's Search API. Prefer this for current information, source discovery, and anything you are not highly confident about.",
+    promptSnippet:
+      "Search the web for current information and sources using Parallel's Search API",
+    promptGuidelines: [
+      "Use web_search when the task involves current information, external facts, source discovery, recent changes, or any claim you are not highly confident about.",
+      "Provide 2-3 concise keyword search_queries (3-6 words each) and a self-contained objective.",
+      "Use advanced_settings only when needed: restrict domains via source_policy, geo-target via location, or lower latency via mode: 'basic'.",
+    ],
+    parameters: Type.Object({
+      objective: Type.String({
+        description:
+          "Natural-language description of the underlying question or goal driving the search. Must be self-contained.",
+      }),
+      search_queries: Type.Array(Type.String(), {
+        description:
+          "Concise keyword search queries, 3-6 words each. At least one; 2-3 is best.",
+      }),
+      advanced_settings: Type.Optional(
+        Type.Object({
+          mode: Type.Optional(Type.Union([Type.Literal("basic"), Type.Literal("advanced")])),
+          max_results: Type.Optional(Type.Number()),
+          location: Type.Optional(Type.String()),
+          source_policy: Type.Optional(
+            Type.Object({
+              include_domains: Type.Optional(Type.Array(Type.String())),
+              exclude_domains: Type.Optional(Type.Array(Type.String())),
+              after_date: Type.Optional(Type.String()),
+            }),
+          ),
+          excerpt_settings: Type.Optional(
+            Type.Object({
+              max_chars_per_result: Type.Optional(Type.Number()),
+            }),
+          ),
+          fetch_policy: Type.Optional(
+            Type.Object({
+              max_age_seconds: Type.Optional(Type.Number()),
+              timeout_seconds: Type.Optional(Type.Number()),
+              disable_cache_fallback: Type.Optional(Type.Boolean()),
+            }),
+          ),
+        }),
+      ),
+    }),
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      const apiKey = process.env.PARALLEL_API_KEY?.trim();
+      if (!apiKey) {
+        throw new Error("PARALLEL_API_KEY is not set. Add it to the Pi environment, then retry.");
+      }
+      const client = new Parallel({ apiKey });
+      const result = await client.search(
+        cleanObject({
+          objective: params.objective,
+          search_queries: params.search_queries,
+          advanced_settings: params.advanced_settings,
+          client_model: ctx.model?.id,
+          session_id: parallelSessionId,
+        }),
+        { signal },
+      );
+      return {
+        content: [{ type: "text" as const, text: boundedJsonText(result) }],
+        details: { provider: "parallel", product: "search" },
+      };
+    },
+  });
+
   // ---------------------------------------------------------------------
   // web_fetch — local Firecrawl scrape (Camofox render path)
   // ---------------------------------------------------------------------
@@ -72,7 +181,7 @@ export default function piWebTools(pi: ExtensionAPI) {
         { description: `List of URLs to fetch. Must be valid HTTP/HTTPS URLs. Up to ${MAX_URLS}.` },
       ),
     }),
-    async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const apiKey = process.env.FIRECRAWL_API_KEY?.trim();
       if (!apiKey) {
         throw new Error("FIRECRAWL_API_KEY is not set. Add it to the Pi environment, then retry.");
@@ -103,8 +212,7 @@ export default function piWebTools(pi: ExtensionAPI) {
             });
             const body = await res.json().catch(() => ({}));
             if (!res.ok || body.success === false) {
-              out[i].error =
-                `HTTP ${res.status}` + (body?.error ? `: ${String(body.error).slice(0, 200)}` : "");
+              out[i].error = `HTTP ${res.status}` + (body?.error ? `: ${String(body.error).slice(0, 200)}` : "");
             } else {
               out[i].markdown = body?.data?.markdown ?? "";
             }
