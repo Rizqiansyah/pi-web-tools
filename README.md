@@ -56,3 +56,20 @@ Both tools are registered unconditionally and appear in the default loadout.
 See [SPEC.md](SPEC.md): wire contracts (verified from the installed SDK),
 deployment mechanism, env, rollback, and phase-2 scope (`web_browse`,
 `web_research`, Parallel monitors).
+
+## Verification (2026-09-23, Pi 0.87.0)
+
+Deployed as `~/.pi/agent/extensions/pi-web-tools` (symlink), both official web
+plugins removed, interim `web-split` superseded. All checks against a live
+pi process with the real env (keys never printed):
+
+- Boot: clean, no load errors, no tool-name conflicts
+- Wire (37 tools sent to the model): `web_search` + `web_fetch` present;
+  `firecrawl_scrape`/`firecrawl_search` absent; no Parallel grounding block;
+  the only "Firecrawl" mention is our own `web_fetch` description
+- Functional: `web_search` → Parallel Search API → "Canberra" (capital of
+  Australia); `web_fetch` → local Firecrawl/Camofox → "Example Domain"
+  (H1 of example.com)
+
+Type-check: `npm run typecheck` clean against the installed pi SDK
+(path-mapped in tsconfig.json).
