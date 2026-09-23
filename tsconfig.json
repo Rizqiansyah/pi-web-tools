@@ -15,5 +15,5 @@
       ]
     }
   },
-  "include": ["index.ts"]
+  "include": ["*.ts"]
 }
