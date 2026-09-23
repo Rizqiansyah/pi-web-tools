@@ -93,3 +93,15 @@ Type-check: `npm run typecheck` clean against the installed pi SDK
   saved to temp path
 - teardown: `agent_end`/`session_shutdown` fired -> camofox tabs=[]
   after the session (no leaked tabs)
+
+`web_research` / `web_research_status` (Parallel task runs, SDK v1.3.3):
+
+- contract verified against the Parallel API reference: `/result`
+  `timeout` is in **seconds** (server default 600, ours 900); a 408
+  "run still active" returns the run_id for `web_research_status`
+  polling instead of failing
+- LIVE run: "What year did the Paris Agreement enter into force?"
+  (default `base` processor) -> "2016, 1 source" (correct, sourced)
+
+Final wire: 52 tools total, 17 web tools (13 browse + search +
+2 research + fetch), zero `firecrawl*`/`parallel*` provider-name leaks.
