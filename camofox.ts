@@ -140,7 +140,10 @@ export class CamofoxClient {
     const buf = await resp.arrayBuffer();
     const raw = wantBinary && resp.ok ? "" : new TextDecoder().decode(buf);
     if (!resp.ok) {
-      if (resp.status === 404 && /tab not found/i.test(raw)) throw new TabNotFoundError(raw);
+      // 404 "tab not found" and 410 "browser_restarted" both mean the cached
+      // tabId is gone; withTab() re-creates the tab and retries transparently.
+      if ((resp.status === 404 && /tab not found/i.test(raw)) || (resp.status === 410 && /browser_restarted/i.test(raw)))
+        throw new TabNotFoundError(raw);
       throw new CamofoxError(
         `camofox ${method} ${path} -> ${resp.status}: ${raw.slice(0, 300)}`,
         resp.status,

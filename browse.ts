@@ -382,5 +382,8 @@ export function registerBrowse(pi: ExtensionAPI): void {
     sessions.clear();
   };
   pi.on("session_shutdown", teardown);
-  pi.on("agent_end", teardown);
+  // NOTE: do NOT teardown on `agent_end` — it fires at the end of every turn
+  // (and on auto-compaction mid-run), which destroyed the camofox session
+  // between user messages and reset pages to about:blank. The camofox server
+  // reaps idle sessions itself (SESSION_TIMEOUT_MS + hermes-session-guard).
 }
