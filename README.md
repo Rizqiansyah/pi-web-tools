@@ -73,3 +73,23 @@ pi process with the real env (keys never printed):
 
 Type-check: `npm run typecheck` clean against the installed pi SDK
 (path-mapped in tsconfig.json).
+
+## Phase 2 verification (2026-09-23)
+
+`web_browse_*` (13 tools, Camofox v1.14.0, Hermes architecture):
+
+- unit: `tests/camofox.test.ts` 25/25 PASS (LIVE against 127.0.0.1:9377:
+  identity determinism/isolation, normalizeRef, health, tab lifecycle,
+  navigate/back/forward/refresh/wait, snapshot+refs, links, screenshot
+  PNG magic, evaluate, click, stale-tab 404 -> TabNotFoundError,
+  unreachable host, destroySession idempotency)
+- wire: 13/13 `web_browse_*` tools on the provider wire alongside
+  web_search/web_fetch (50 tools total, no name conflicts)
+- e2e interactive flow (model-driven): navigate example.com -> snapshot
+  -> click [e1] -> snapshot -> landed on iana.org/help/example-domains
+- e2e form flow (model-driven): duckduckgo -> click box -> Tab -> type
+  "cat photos" -> Enter -> results page (title "cat photos at DuckDuckGo"),
+  evaluate(document.title) + links(3) + screenshot -> valid 1280x720 PNG
+  saved to temp path
+- teardown: `agent_end`/`session_shutdown` fired -> camofox tabs=[]
+  after the session (no leaked tabs)
