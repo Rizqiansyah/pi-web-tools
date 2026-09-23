@@ -1,17 +1,27 @@
 /**
  * pi-web-tools — Pi web tools under familiar names, one provider each.
  *
- *   web_search -> Parallel Search API  (official parallel-web SDK)
- *   web_fetch  -> local Firecrawl scrape (Camofox render path)
+ *   web_search            -> Parallel Search API  (official parallel-web SDK)
+ *   web_research (+_status) -> Parallel task runs (hosted deep research)
+ *   web_fetch             -> local Firecrawl scrape (Camofox render path)
+ *   web_browse_*          -> local Camofox anti-detection browser (REST)
  *
  * Replaces @parallel-web/pi-extension (search) and @narumitw/pi-firecrawl
- * (fetch) with a single extension that owns both tool names, so the
- * vocabulary and descriptions are controlled here.
+ * (fetch) with a single extension that owns all the tool names, so the
+ * vocabulary and descriptions are controlled here. No MCP.
  *
  * Env (read at tool execution time, never in this file):
- *   PARALLEL_API_KEY       required for web_search
- *   FIRECRAWL_API_URL      optional, default http://127.0.0.1:3002/v1
- *   FIRECRAWL_API_KEY      required for web_fetch (always sent as Bearer)
+ *   PARALLEL_API_KEY       required for web_search / web_research
+ *   FIRECRAWL_API_URL      local Firecrawl (default http://127.0.0.1:3002/v1)
+ *   FIRECRAWL_API_KEY      local Firecrawl auth
+ *   CAMOFOX_URL            Camofox server (default http://127.0.0.1:9377)
+ *   CAMOFOX_API_KEY        Camofox auth (optional)
+ *
+ * Layout:
+ *   camofox.ts   — REST client + deterministic session identity (pure, testable)
+ *   browse.ts    — web_browse_* tools + session lifecycle
+ *   research.ts  — web_research / web_research_status
+ *   this file    — web_search + web_fetch + factory wiring
  *
  * Deployment: symlink this directory into ~/.pi/agent/extensions/ (see
  * README.md). pi loads it via the "pi.extensions" manifest in package.json.
@@ -31,6 +41,7 @@ import { writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { registerBrowse } from "./browse.js";
+import { registerResearch } from "./research.js";
 
 const FIRECRAWL_DEFAULT_URL = "http://127.0.0.1:3002/v1";
 const MAX_URLS = 20;
@@ -92,6 +103,11 @@ export default function piWebTools(pi: ExtensionAPI) {
   // web_browse_* — Camofox (local anti-detection browser)
   // ---------------------------------------------------------------------
   registerBrowse(pi);
+
+  // ---------------------------------------------------------------------
+  // web_research (+ web_research_status) — Parallel task runs (deep research)
+  // ---------------------------------------------------------------------
+  registerResearch(pi);
 
   // ---------------------------------------------------------------------
   // web_search — Parallel Search API
