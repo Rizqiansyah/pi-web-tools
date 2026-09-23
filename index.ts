@@ -30,6 +30,7 @@ import { randomUUID } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { registerBrowse } from "./browse.js";
 
 const FIRECRAWL_DEFAULT_URL = "http://127.0.0.1:3002/v1";
 const MAX_URLS = 20;
@@ -87,6 +88,11 @@ function cleanObject(value: any): any {
 }
 
 export default function piWebTools(pi: ExtensionAPI) {
+  // ---------------------------------------------------------------------
+  // web_browse_* — Camofox (local anti-detection browser)
+  // ---------------------------------------------------------------------
+  registerBrowse(pi);
+
   // ---------------------------------------------------------------------
   // web_search — Parallel Search API
   // ---------------------------------------------------------------------
